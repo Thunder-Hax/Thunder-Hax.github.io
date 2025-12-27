@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Mini Fuser P2P — Static GitHub Pages</title>
+<style>
+  :root{--accent:#2b7cff;--muted:#f6f7fb}
+  body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial; margin:12px; color:#111}
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  h1{margin:0;font-size:18px}
+  .muted{color:#666;font-size:13px}
+  #wrap{display:flex;gap:12px;flex-wrap:wrap}
+  #left{width:260px}
+  input[type="text"], input[type="file"], textarea, select {width:100%;padding:6px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box}
+  textarea{height:140px;resize:none}
+  button{padding:6px 10px;border-radius:6px;border:1px solid #bbb;background:#fff;cursor:pointer;margin:4px 2px}
+  .small{padding:4px 8px;font-size:13px}
+  #tabs{margin-top:8px}
+  .tabbtn{padding:8px 10px;border-radius:6px;border:1px solid #ccc;background:var(--muted);cursor:pointer;margin-right:6px}
+  .active{outline:2px solid var(--accent)}
+  #chatArea,#videoArea,#screensArea{display:none;margin-top:10px}
+  #chatWindow{border:1px solid #ddd;height:300px;overflow:auto;padding:8px;background:#fff}
+  .pv-box{border:1px solid #eee;padding:6px;margin-bottom:8px;background:#fafafa}
+  .emoji{cursor:pointer;padding:4px;font-size:18px}
+  .controls-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  video{max-width:100%;border:1px solid #333;margin-top:8px;border-radius:6px}
+  .player{width:100%;max-height:360px}
+  .listItem{padding:6px;border:1px solid #eee;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;border-radius:6px;background:#fff}
+  .label{font-size:13px;color:#333;margin-bottom:4px;display:block}
+  .small-muted{font-size:12px;color:#666}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mini Fuser P2P — Static</h1>
+  <div class="muted">Peer-to-peer (PeerJS) • pas de serveur central requis (manual connect)</div>
+</header>
+
+<div id="wrap">
+  <div id="left">
+    <label class="label">ID utilisateur</label>
+    <input id="userIdInput" type="text" />
+    <div class="controls-row">
+      <button id="saveIdBtn" class="small">Save</button>
+      <button id="randBtn" class="small">Random</button>
+      <button id="deleteBtn" class="small">Delete</button>
+    </div>
+
+    <label class="label" style="margin-top:8px">Utilisateurs connus / connectés (clic pour choisir)</label>
+    <textarea id="userArea" readonly></textarea>
+
+    <div style="margin-top:8px">
+      <label class="label">Rejoindre / Appeler (colle ou clique)</label>
+      <input id="targetInput" type="text" placeholder="Target user id"/>
+      <div class="controls-row">
+        <button id="connectPeerBtn" class="small">Connect</button>
+        <button id="callBtn" class="small">Call</button>
+        <button id="endCallBtn" class="small">End Call</button>
+      </div>
+    </div>
+
+    <div style="margin-top:8px">
+      <label><input type="checkbox" id="allowControl" /> Autoriser contrôle (souris/clavier)</label>
+    </div>
+
+    <div style="margin-top:8px">
+      <label><input type="checkbox" id="privateMode" checked /> Mode privé par défaut</label>
+    </div>
+
+    <div style="margin-top:8px">
+      <label class="label">Refresh interval (sec): <span id="intervalDisplay">5</span></label>
+      <input id="intervalRange" type="range" min="2" max="20" value="5" />
+    </div>
+
+    <div style="margin-top:8px">
+      <label class="label">Status</label>
+      <div id="status" class="small-muted">Initializing...</div>
+    </div>
+  </div>
+
+  <div id="main" style="flex:1;min-width:320px">
+    <div id="tabs">
+      <button class="tabbtn active" data-tab="chatArea">Chat</button>
+      <button class="tabbtn" data-tab="videoArea">Videos</button>
+      <button class="tabbtn" data-tab="screensArea">Screenshare</button>
+    </div>
+
+    <!-- CHAT TAB -->
+    <div id="chatArea">
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1">
+          <div id="chatWindow"></div>
+
+          <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+            <input id="msgInput" type="text" placeholder="Message..."/>
+            <button id="sendBtn">Send</button>
+            <button id="emojiBtn">Emoji</button>
+            <div id="emojiPalette" style="display:none"></div>
+          </div>
+        </div>
+
+        <div style="width:300px">
+          <div class="muted">Private chats</div>
+          <div id="privateChats"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIDEO TAB -->
+    <div id="videoArea">
+      <div style="display:flex;gap:12px;flex-direction:column">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <input id="openFile" type="file" accept="video/*" />
+          <div>
+            <button id="streamBtn" class="small">Start P2P Stream (player → peers)</button>
+            <button id="stopStreamBtn" class="small">Stop Stream</button>
+          </div>
+        </div>
+
+        <div id="playlist"></div>
+
+        <video id="mainPlayer" class="player" controls playsinline></video>
+      </div>
+    </div>
+
+    <!-- SCREENSHARE TAB -->
+    <div id="screensArea">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="shareScreenBtn" class="small">Share Screen</button>
+        <button id="stopShareBtn" class="small">Stop Share</button>
+        <label class="muted" style="margin-left:10px">(Screen → P2P call to target when calling)</label>
+      </div>
+
+      <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div class="muted">Local</div>
+          <video id="localVideo" autoplay muted playsinline style="width:100%;height:auto;border-radius:6px"></video>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <div class="muted">Remote</div>
+          <video id="remoteVideo" autoplay playsinline style="width:100%;height:auto;border-radius:6px"></video>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- PeerJS -->
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+
+<script>
+/*
+  NOTE:
+  - This is a static-only P2P page using PeerJS cloud signaling.
+  - There is NO central userlist available without a server.
+  - Users must connect to each other by ID (enter or click from known list).
+*/
+
+/* ---------- Config & State ---------- */
+const conf = {
+  peerServer: { host: '0.peerjs.com', secure: true, port: 443, path: '/' }, // PeerJS cloud
+  refreshIntervalSec: 5
+};
+
+let peer = null;
+let myId = localStorage.getItem('myUserId') || 'User' + Math.floor(Math.random()*9000);
+let connections = {};      // data connections by peerId
+let calls = {};            // media calls by peerId
+let knownUsers = new Set(); // saved / discovered (local)
+let privateChats = {};     // {peerId: [{from,text}...] }
+let localStream = null;
+let playerStream = null;
+let streamingCalls = {};   // calls streaming from player
+
+/* ---------- DOM ---------- */
+const userIdInput = document.getElementById('userIdInput');
+const saveIdBtn = document.getElementById('saveIdBtn');
+const randBtn = document.getElementById('randBtn');
+const deleteBtn = document.getElementById('deleteBtn');
+const userArea = document.getElementById('userArea');
+const targetInput = document.getElementById('targetInput');
+const connectPeerBtn = document.getElementById('connectPeerBtn');
+const callBtn = document.getElementById('callBtn');
+const endCallBtn = document.getElementById('endCallBtn');
+const allowControl = document.getElementById('allowControl');
+const privateModeCheckbox = document.getElementById('privateMode');
+const intervalRange = document.getElementById('intervalRange');
+const intervalDisplay = document.getElementById('intervalDisplay');
+const statusDiv = document.getElementById('status');
+
+const chatWindow = document.getElementById('chatWindow');
+const msgInput = document.getElementById('msgInput');
+const sendBtn = document.getElementById('sendBtn');
+const emojiBtn = document.getElementById('emojiBtn');
+const emojiPalette = document.getElementById('emojiPalette');
+const privateChatsDiv = document.getElementById('privateChats');
+
+const tabs = document.querySelectorAll('.tabbtn');
+
+const openFile = document.getElementById('openFile');
+const playlist = document.getElementById('playlist');
+const mainPlayer = document.getElementById('mainPlayer');
+const streamBtn = document.getElementById('streamBtn');
+const stopStreamBtn = document.getElementById('stopStreamBtn');
+
+const shareScreenBtn = document.getElementById('shareScreenBtn');
+const stopShareBtn = document.getElementById('stopShareBtn');
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+
+/* ---------- Init UI ---------- */
+userIdInput.value = myId;
+intervalRange.value = conf.refreshIntervalSec;
+intervalDisplay.textContent = conf.refreshIntervalSec;
+
+/* ---------- Helpers ---------- */
+function logStatus(s){ statusDiv.textContent = s; }
+function addKnownUser(id){ if(!id) return; knownUsers.add(id); renderUserArea(); }
+function removeKnownUser(id){ knownUsers.delete(id); renderUserArea(); }
+function renderUserArea(){
+  const arr = Array.from(knownUsers);
+  // show connected peers first
+  const connected = Object.keys(connections);
+  const combined = Array.from(new Set([...connected, ...arr]));
+  userArea.value = combined.join('\\n');
+}
+function escapeHtml(s){ return (s||'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function appendPublic(msg){
+  const el = document.createElement('div');
+  el.innerHTML = `<strong>${escapeHtml(msg.from||'')}</strong>: ${escapeHtml(msg.text)}`;
+  chatWindow.appendChild(el);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+function appendPrivate(peerId, text, from){
+  if(!privateChats[peerId]) privateChats[peerId] = [];
+  privateChats[peerId].push({from,text});
+  renderPrivateWindows();
+}
+function renderPrivateWindows(){
+  privateChatsDiv.innerHTML = '';
+  Object.keys(privateChats).forEach(pid=>{
+    const box = document.createElement('div');
+    box.className = 'pv-box';
+    const msgs = privateChats[pid];
+    const inner = msgs.map(m=>`<div><strong>${escapeHtml(m.from||'')}</strong>: ${escapeHtml(m.text)}</div>`).join('');
+    box.innerHTML = `<strong>Chat with ${escapeHtml(pid)}</strong>
+      <div style="height:120px;overflow:auto;padding:6px;background:#fff;margin-top:6px" id="pv-${pid}">${inner}</div>
+      <div style="display:flex;gap:6px;margin-top:6px"><input id="pv-in-${pid}" placeholder="Message to ${escapeHtml(pid)}" style="flex:1"/><button data-user="${pid}" class="pv-send small">Send</button></div>`;
+    privateChatsDiv.appendChild(box);
+  });
+
+  privateChatsDiv.querySelectorAll('.pv-send').forEach(btn=>{
+    btn.onclick = ()=>{
+      const uid = btn.getAttribute('data-user');
+      const input = document.getElementById('pv-in-' + uid);
+      const text = input.value.trim();
+      if(!text) return;
+      sendChat(text, uid);
+      appendPrivate(uid, text, 'Me');
+      input.value = '';
+    };
+  });
+}
+
+/* ---------- PeerJS Init ---------- */
+function initPeer(){
+  peer = new Peer(myId, conf.peerServer);
+  peer.on('open', id=>{
+    logStatus('Peer open: ' + id);
+    addKnownUser(id);
+  });
+  peer.on('error', err=>{
+    console.error('Peer error', err);
+    logStatus('Peer error: ' + (err && err.type ? err.type : err));
+  });
+
+  // incoming data connection
+  peer.on('connection', conn=>{
+    setupConnection(conn);
+  });
+
+  // incoming media call
+  peer.on('call', call=>{
+    console.log('incoming call from', call.peer);
+    // automatically answer with localStream if available; otherwise answer with no stream
+    calls[call.peer] = call;
+    try{
+      if(localStream){
+        call.answer(localStream);
+      } else {
+        call.answer(); // no media
+      }
+    }catch(e){ console.warn('answer failed', e); call.answer(); }
+    call.on('stream', stream => {
+      // attach to remoteVideo
+      remoteVideo.srcObject = stream;
+    });
+    call.on('close', ()=>{ delete calls[call.peer]; });
+  });
+}
+initPeer();
+
+/* ---------- Data connection wiring ---------- */
+function connectToPeer(targetId){
+  if(!targetId) return alert('Enter target id');
+  if(connections[targetId] && connections[targetId].open) { logStatus('Already connected to ' + targetId); return; }
+  const conn = peer.connect(targetId, { reliable: true });
+  setupConnection(conn);
+  addKnownUser(targetId);
+}
+
+function setupConnection(conn){
+  const id = conn.peer;
+  connections[id] = conn;
+  conn.on('open', ()=>{
+    logStatus('DataConn open: ' + id);
+    // send presence message
+    const p = { type:'presence', from: myId, time: Date.now() };
+    safeSend(conn, p);
+    renderUserArea();
+  });
+  conn.on('data', data=>{
+    handleDataMessage(conn, data);
+  });
+  conn.on('close', ()=>{ delete connections[id]; renderUserArea(); });
+  conn.on('error', e=> console.warn('conn err', e));
+}
+
+/* ---------- Messaging ---------- */
+function safeSend(conn, obj){
+  try{ conn.send(obj); } catch(e){ console.warn('send fail', e); }
+}
+
+function broadcast(obj){
+  Object.values(connections).forEach(c => { if(c.open) safeSend(c, obj); });
+}
+
+/* handle incoming "app" messages over datachannel */
+function handleDataMessage(conn, data){
+  if(typeof data !== 'object') return;
+  const t = data.type;
+  if(t === 'presence'){
+    // save peer id
+    addKnownUser(conn.peer);
+  } else if(t === 'chat'){
+    if(data.target && data.target !== myId){
+      // not for me
+      return;
+    }
+    if(data.target){ // private to me
+      appendPrivate(data.from, data.text, data.from);
+    } else {
+      appendPublic({from: data.from, text: data.text});
+    }
+  } else if(t === 'control'){
+    // control event incoming
+    if(data.to && data.to === myId){
+      // apply or log control event
+      console.log('control event received', data.event);
+      // NOTE: for safety we don't auto-execute DOM events; app may choose to interpret
+    }
+  } else if(t === 'stream-offer'){
+    // remote peer announces they are streaming: no central signaling, small demo only
+    // optionally you can call them to receive media if they used getDisplayMedia + call
+    console.log('stream-offer from', data.from);
+  }
+}
+
+/* ---------- Chat functions ---------- */
+function sendChat(text, target=null){
+  const payload = { type:'chat', from: myId, text };
+  if(target) payload.target = target;
+  // if target is connected, send to that peer only
+  if(target && connections[target] && connections[target].open){
+    safeSend(connections[target], payload);
+  } else if(!target){
+    // broadcast to all connected peers
+    broadcast(payload);
+  } else {
+    // target not connected: try to connect then send
+    connectToPeer(target);
+    setTimeout(()=>{ if(connections[target] && connections[target].open) safeSend(connections[target], payload); }, 800);
+  }
+}
+
+/* ---------- UI actions ---------- */
+saveIdBtn.onclick = ()=>{
+  const v = userIdInput.value.trim();
+  if(!v) return alert('Enter id');
+  myId = v;
+  localStorage.setItem('myUserId', myId);
+  // re-init peer with new id
+  try{ peer.disconnect(); peer.destroy(); }catch(e){}
+  setTimeout(()=>{ initPeer(); }, 200);
+};
+
+randBtn.onclick = ()=>{
+  const r = 'User' + Math.floor(Math.random()*90000+1000);
+  userIdInput.value = r;
+  myId = r;
+  localStorage.setItem('myUserId', r);
+  try{ peer.disconnect(); peer.destroy(); }catch(e){}
+  setTimeout(()=>{ initPeer(); }, 200);
+};
+
+deleteBtn.onclick = ()=>{
+  localStorage.removeItem('myUserId');
+  myId = 'User' + Math.floor(Math.random()*9000);
+  userIdInput.value = myId;
+  try{ peer.disconnect(); peer.destroy(); }catch(e){}
+  setTimeout(()=>{ initPeer(); }, 200);
+};
+
+userArea.addEventListener('click', e=>{
+  const lines = userArea.value.split('\\n').filter(Boolean);
+  if(!lines.length) return;
+  const rect = userArea.getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const index = Math.floor(y / (rect.height / lines.length));
+  const sel = lines[Math.max(0, Math.min(index, lines.length-1))];
+  if(sel) targetInput.value = sel;
+});
+
+connectPeerBtn.onclick = ()=> connectToPeer(targetInput.value.trim());
+callBtn.onclick = async ()=>{
+  const target = targetInput.value.trim();
+  if(!target) return alert('Select a target to call');
+  // if we have local stream -> call with it, else prompt to share screen
+  if(localStream){
+    const call = peer.call(target, localStream);
+    calls[target] = call;
+    call.on('stream', stream => { remoteVideo.srcObject = stream; });
+    call.on('close', ()=> delete calls[target]);
+  } else {
+    try{
+      await startScreenShare();
+      if(localStream){
+        const call = peer.call(target, localStream);
+        calls[target] = call;
+        call.on('stream', stream => { remoteVideo.srcObject = stream; });
+        call.on('close', ()=> delete calls[target]);
+      }
+    } catch(e){ alert('Call failed: ' + e.message); }
+  }
+};
+endCallBtn.onclick = ()=>{
+  const target = targetInput.value.trim();
+  if(target && calls[target]){ try{ calls[target].close(); }catch(e){} delete calls[target]; }
+  if(localStream){ localStream.getTracks().forEach(t=>t.stop()); localStream = null; localVideo.srcObject = null; }
+};
+
+/* send chat from main input */
+sendBtn.onclick = ()=>{
+  const text = msgInput.value.trim();
+  if(!text) return;
+  const privateMode = privateModeCheckbox.checked;
+  const target = privateMode ? (targetInput.value.trim() || null) : null;
+  sendChat(text, target);
+  if(target) appendPrivate(target, text, 'Me'); else appendPublic({from:'Me', text});
+  msgInput.value = '';
+};
+msgInput.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); sendBtn.click(); } });
+
+/* emoji palette */
+const emojis = ["😀","😂","😎","😍","😢","👍","🎉","🔥","🤝","🙏","🙌"];
+emojiBtn.onclick = ()=>{
+  emojiPalette.style.display = emojiPalette.style.display === 'block' ? 'none' : 'block';
+  if(emojiPalette.style.display === 'block'){
+    emojiPalette.innerHTML = emojis.map(em => `<span class="emoji">${em}</span>`).join(' ');
+    emojiPalette.querySelectorAll('.emoji').forEach(el=> el.onclick = ()=> { msgInput.value += el.textContent; msgInput.focus(); });
+  }
+};
+
+/* ---------- Screen sharing ---------- */
+async function startScreenShare(){
+  try{
+    const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    localStream = s;
+    localVideo.srcObject = s;
+    // if user allows control and target connected, we can send control events via datachannel
+    s.getTracks()[0].addEventListener('ended', ()=> { localStream = null; localVideo.srcObject = null; });
+    return s;
+  }catch(e){ throw e; }
+}
+shareScreenBtn.onclick = async ()=> {
+  try{
+    await startScreenShare();
+    alert('Screen ready. Use Call to send to target.');
+  }catch(e){ alert('Share failed: ' + e.message); }
+};
+stopShareBtn.onclick = ()=> {
+  if(localStream){ localStream.getTracks().forEach(t=>t.stop()); localStream = null; localVideo.srcObject = null; }
+};
+
+/* ---------- Control forwarding (mouse/keyboard) ---------- */
+function sendControl(e){
+  if(!allowControl.checked) return;
+  const tgt = targetInput.value.trim();
+  if(!tgt) return;
+  const payload = { type:'control', from: myId, to: tgt, event: { type:e.type, x:e.clientX||0, y:e.clientY||0, key:e.key||null, button:e.button||null } };
+  if(connections[tgt] && connections[tgt].open) safeSend(connections[tgt], payload);
+}
+['mousemove','click','keydown'].forEach(ev => document.addEventListener(ev, throttle(sendControl, 120), true));
+function throttle(fn, wait){
+  let last=0;
+  return function(...a){ const now = Date.now(); if(now - last > wait){ last = now; fn.apply(this,a); last = now; } }
+}
+
+/* ---------- Video player & streaming (captureStream) ---------- */
+openFile.addEventListener('change', e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const url = URL.createObjectURL(f);
+  const item = document.createElement('div');
+  item.className = 'listItem';
+  item.innerHTML = `<div style="flex:1">${escapeHtml(f.name)} <span class="small-muted">(${Math.round(f.size/1024)} KB)</span></div>
+    <div>
+      <button class="play small" data-url="${url}">Play</button>
+      <button class="stream small" data-url="${url}">Stream</button>
+    </div>`;
+  playlist.appendChild(item);
+  item.querySelector('.play').onclick = ()=> { mainPlayer.src = url; mainPlayer.play(); };
+  item.querySelector('.stream').onclick = ()=> { mainPlayer.src = url; mainPlayer.play(); startStreamingFromPlayer(); };
+});
+
+async function startStreamingFromPlayer(){
+  if(!mainPlayer.src) return alert('Load a video first');
+  if(!mainPlayer.captureStream) return alert('captureStream not supported in this browser');
+  try{
+    playerStream = mainPlayer.captureStream();
+    // call target or broadcast
+    const target = targetInput.value.trim();
+    if(target){
+      const call = peer.call(target, playerStream);
+      streamingCalls[target] = call;
+      call.on('close', ()=> delete streamingCalls[target]);
+    } else {
+      // broadcast to all connected peers
+      Object.keys(connections).forEach(pid=>{
+        const call = peer.call(pid, playerStream);
+        streamingCalls[pid] = call;
+        call.on('close', ()=> delete streamingCalls[pid]);
+      });
+    }
+    alert('Streaming to peers started.');
+  }catch(e){ console.error(e); alert('Stream failed: ' + e.message); }
+}
+stopStreamBtn.onclick = ()=>{
+  if(playerStream){ playerStream.getTracks().forEach(t=>t.stop()); playerStream = null; }
+  Object.keys(streamingCalls).forEach(k => { try{ streamingCalls[k].close(); } catch(e){} delete streamingCalls[k]; });
+};
+
+/* ---------- Periodic refresh (UI local only) ---------- */
+let refreshInterval = parseInt(intervalRange.value,10) || 5;
+intervalRange.oninput = ()=>{ refreshInterval = parseInt(intervalRange.value,10); intervalDisplay.textContent = refreshInterval; };
+
+setInterval(()=>{
+  // render user area and private windows
+  renderUserArea();
+  renderPrivateWindows();
+}, refreshInterval * 1000);
+
+/* ---------- incoming browse handlers ---------- */
+tabs.forEach(b => b.onclick = ()=>{
+  tabs.forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  const tab = b.getAttribute('data-tab');
+  ['chatArea','videoArea','screensArea'].forEach(id => document.getElementById(id).style.display = id === tab ? 'block' : 'none');
+});
+document.querySelector('.tabbtn[data-tab="chatArea"]').click();
+
+/* ---------- startup housekeeping ---------- */
+addKnownUser(myId);
+logStatus('Ready (no central discovery) — connect by ID to peers');
+console.log('Mini Fuser P2P static ready. My id:', myId);
+
+</script>
+</body>
+</html>
